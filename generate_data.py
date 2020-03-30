@@ -60,7 +60,7 @@ def dig_surface(surf, X, Y, x_traj, y_traj, z_traj, phi_traj, w_bucket = 0.1):
 
         for jx in range(x_idx_min,x_idx_max):
 
-            jy = round(y_idx_min + (jx-x_idx_min)*(y_idx_max - y_idx_min)/(x_idx_max - x_idx_min))
+            jy = int(round(y_idx_min + (jx-x_idx_min)*(y_idx_max - y_idx_min)/(x_idx_max - x_idx_min)))
 
             new_depth = z_traj[i]
             surf_new[jy , jx] = new_depth
