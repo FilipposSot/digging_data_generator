@@ -145,7 +145,7 @@ def pos2index(x,y,X,Y):
 
     return int(idx),int(idy)
 
-def generate_expert_trajectory(x,y,z,target_area = 1.0):
+def generate_expert_trajectory(x,y,z,target_area = 1.0, f_z=None):
     ''' 
     function that generates simulated "expert" trajectory based on surface profile.
     Based on heuristic rules for where to excavate.
@@ -166,7 +166,8 @@ def generate_expert_trajectory(x,y,z,target_area = 1.0):
     t_waypoints = np.array([0,0.3,0.5,0.7,1.0])
     t_array = np.linspace(0,1,100)
 
-    f_z = interpolate.interp2d(x, y, z, kind='cubic')
+    if f_z is None:
+        f_z = interpolate.interp2d(x, y, z, kind='cubic')
     f_r = interpolate.interp1d(np.array([0,1]),np.array([r_init,r_final]))
 
     z_init = f_z(-r_init*np.sin(theta), r_init*np.cos(theta))[0]
@@ -179,7 +180,7 @@ def generate_expert_trajectory(x,y,z,target_area = 1.0):
     depth = 0.75
 
     for N_it in range(50):
-        
+
         z_1 = f_z(-r_1*np.sin(theta), r_1*np.cos(theta))[0] - depth
         z_2 = f_z(-r_2*np.sin(theta), r_2*np.cos(theta))[0] - depth
         z_3 = f_z(-r_3*np.sin(theta), r_3*np.cos(theta))[0] - depth

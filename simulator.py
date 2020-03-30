@@ -67,7 +67,7 @@ class Simulator:
         if event == cv2.EVENT_LBUTTONDOWN and not self.updating:
             self.updating = True
             self.center = (x,y)
-            theta_traj, r_traj, z_traj, theta_wp, r_wp, z_wp = gd.generate_expert_trajectory(self.X_surf, self.Y_surf, self.elevation)
+            theta_traj, r_traj, z_traj, theta_wp, r_wp, z_wp = gd.generate_expert_trajectory(self.X_surf, self.Y_surf, self.elevation, f_z=self.surface_interpolator)
             x_traj, y_traj, z_traj = gd.cylindrical_to_cartesian(theta_traj,r_traj,z_traj)
             x_wp, y_wp, z_wp = gd.cylindrical_to_cartesian(theta_wp, r_wp, z_wp)
             surf_dug = gd.dig_surface(self.elevation, self.X_surf, self.Y_surf, x_traj, y_traj, z_traj, theta_traj, w_bucket = 0.2)
@@ -75,6 +75,32 @@ class Simulator:
             self.elevation = surf_new
             print self.elevation.shape
             self.updating = False
+
+    def surface_interpolator(self, x_list, y_list):
+        if not isinstance(x_list, np.ndarray):
+            x_list = np.array([x_list])
+        if not isinstance(y_list, np.ndarray):
+            y_list = np.array([y_list])
+        z_list = []
+        for x,y in zip(x_list,y_list):
+            ind_x = np.searchsorted(self.X_surf[0,:], x)
+            ind_y = np.searchsorted(self.Y_surf[:,0], y)
+
+            x1 = self.X_surf[0,ind_x-1] if ind_x-1 > 0 else self.X_surf[0,0] - 1.0
+            y1 = self.Y_surf[ind_y-1,0] if ind_y-1 > 0 else self.Y_surf[0,0] - 1.0
+
+            x2 = self.X_surf[0,ind_x] if ind_x < self.X_surf.shape[1] else self.X_surf[0,-1] + 1.0
+            y2 = self.Y_surf[ind_y,0] if ind_y < self.Y_surf.shape[0] else self.Y_surf[-1,0] + 1.0
+
+            z11 = self.elevation[max(ind_y-1,0),max(ind_x-1,0)]
+            z12 = self.elevation[min(ind_y,self.Y_surf.shape[0]-1),max(ind_x-1,0)]
+            z21 = self.elevation[max(ind_y-1,0),min(ind_x,self.X_surf.shape[1]-1)]
+            z22 = self.elevation[min(ind_y,self.Y_surf.shape[0]-1),min(ind_x,self.X_surf.shape[1]-1)]
+
+            Z = np.array([[z11, z12],[z21, z22]])
+
+            z_list.append(np.dot([x2-x,x-x1],np.dot(Z,[y2-y,y-y1]))/(x2-x1)/(y2-y1))
+        return z_list
 
 s = Simulator()
 s.Simulate()
