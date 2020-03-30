@@ -180,8 +180,6 @@ def generate_expert_trajectory(x,y,z,target_area = 1.0):
 
     for N_it in range(50):
         
-        N_it += 1
-
         z_1 = f_z(-r_1*np.sin(theta), r_1*np.cos(theta))[0] - depth
         z_2 = f_z(-r_2*np.sin(theta), r_2*np.cos(theta))[0] - depth
         z_3 = f_z(-r_3*np.sin(theta), r_3*np.cos(theta))[0] - depth
