@@ -8,7 +8,7 @@ from scipy import interpolate
 from datetime import datetime
 
 ELEMENT_SIZE = 0.1
-BUCKET_WIDTH = 0.5
+BUCKET_WIDTH = 0.4
 EXPERT_LR = 0.1
 
 def cylindrical_to_cartesian(theta,r,z):
@@ -40,6 +40,30 @@ def generate_random_polynomial_surface(width = 19, height = 10, noise_level = 0.
 
     return surface
 
+def generate_bench_surface(width = 19, height = 10, noise_level = 0.1, theta=0.0, z_max=2, z_min=-2, offset1=0, offset2=5):
+    surface = np.zeros((width,height))
+    center = (width/2, height/2)
+    # Ax + By + c = 0, c = 0
+    # z = m*d + b
+
+    m = -(z_max - z_min)*1./(offset2 - offset1)
+    b = z_max - m*offset1
+
+    A = -np.sin(theta)
+    B = np.cos(theta)
+
+    for w in range(width):
+        for h in range(height):
+            d = (A*(h - center[1]) + B*(w - center[0]))/np.sqrt(A**2 + B**2)
+            z = m*d + b
+            z = max(min(z, z_max), z_min)
+            surface[w, h] = z
+
+    surface = surface + np.random.uniform(low = -noise_level, high = noise_level, size = surface.shape)
+
+    return surface
+
+
 def dig_surface(surf, X, Y, x_traj, y_traj, z_traj, phi_traj, w_bucket = 0.1):
     '''
     Perform a simulated excavation cycle. It converts the input soil surface
@@ -49,21 +73,29 @@ def dig_surface(surf, X, Y, x_traj, y_traj, z_traj, phi_traj, w_bucket = 0.1):
     surf_new = copy.copy(surf)
 
     for i in range(len(x_traj)):
-
         x_min = x_traj[i] - 0.5*BUCKET_WIDTH*np.cos(phi_traj[i])
         x_max = x_traj[i] + 0.5*BUCKET_WIDTH*np.cos(phi_traj[i])
         y_min = y_traj[i] - 0.5*BUCKET_WIDTH*np.sin(phi_traj[i])
         y_max = y_traj[i] + 0.5*BUCKET_WIDTH*np.sin(phi_traj[i])
 
+        if x_min > x_max:
+            temp = x_min
+            x_min = x_max
+            x_max = temp
+            temp = y_min
+            y_min = y_max
+            y_max = temp            
+
         x_idx_min, y_idx_min = pos2index(x_min,y_min,X,Y)
         x_idx_max, y_idx_max = pos2index(x_max,y_max,X,Y)
+        new_depth = z_traj[i]
 
-        for jx in range(x_idx_min,x_idx_max):
-
-            jy = int(round(y_idx_min + (jx-x_idx_min)*(y_idx_max - y_idx_min)/(x_idx_max - x_idx_min)))
-
-            new_depth = z_traj[i]
-            surf_new[jy , jx] = new_depth
+        for t in np.linspace(0,1.0,20):
+            x = x_min + (x_max-x_min)*t
+            y = y_min + (y_max-y_min)*t
+            idx, idy = pos2index(x,y,X,Y)
+            if new_depth < surf_new[idx , idy]:
+                surf_new[idx , idy] = new_depth
 
     return surf_new
 
@@ -145,23 +177,24 @@ def pos2index(x,y,X,Y):
 
     return int(idx),int(idy)
 
-def generate_expert_trajectory(x,y,z,target_area = 1.0, f_z=None):
+def generate_expert_trajectory(x,y,z,target_area = 1.0, f_z=None, theta=None, r_init=None, r_final=None):
     ''' 
     function that generates simulated "expert" trajectory based on surface profile.
     Based on heuristic rules for where to excavate.
     '''
-
-    k = (np.sum(z[x>0]+np.amin(z)) - np.sum(z[x<0]+np.amin(z)))/np.abs(np.sum(z[x>0]+np.amin(z)) + np.sum(z[x<0]+np.amin(z)))
-    
-    if k<-0.10:
-        theta = np.pi/12
-    elif k>0.10:
-        theta = -np.pi/12
-    else:
-        theta = 0
-
-    r_init = 1.50
-    r_final = 0.0
+    if theta is None:
+        k = (np.sum(z[x>0]+np.amin(z)) - np.sum(z[x<0]+np.amin(z)))/np.abs(np.sum(z[x>0]+np.amin(z)) + np.sum(z[x<0]+np.amin(z)))
+        
+        if k<-0.10:
+            theta = np.pi/12
+        elif k>0.10:
+            theta = -np.pi/12
+        else:
+            theta = 0
+    if r_init is None:
+        r_init = 1.50
+    if r_final is None:
+        r_final = 0.0
 
     t_waypoints = np.array([0,0.3,0.5,0.7,1.0])
     t_array = np.linspace(0,1,100)
@@ -177,10 +210,9 @@ def generate_expert_trajectory(x,y,z,target_area = 1.0, f_z=None):
     r_2 = f_r(0.5)
     r_3 = f_r(0.8)
 
-    depth = 0.75
+    depth = 0.25
 
-    for N_it in range(50):
-
+    for N_it in range(500):
         z_1 = f_z(-r_1*np.sin(theta), r_1*np.cos(theta))[0] - depth
         z_2 = f_z(-r_2*np.sin(theta), r_2*np.cos(theta))[0] - depth
         z_3 = f_z(-r_3*np.sin(theta), r_3*np.cos(theta))[0] - depth
@@ -191,9 +223,10 @@ def generate_expert_trajectory(x,y,z,target_area = 1.0, f_z=None):
         z_array = interpolate.splev(t_array, tck_z, der=0)
         r_array = interpolate.splev(t_array, tck_r, der=0)
 
-        z_soil = f_z(-r_array*np.sin(theta),  r_array*np.cos(theta))[0]
+        z_soil = f_z(-r_array*np.sin(theta),  r_array*np.cos(theta))
 
         Dz = z_soil - z_array
+        Dz[Dz < 0] = 0
         Dr = np.abs(r_array[1:] - r_array[:-1])
 
         A_trapz = 0.5*np.multiply((Dz[1:] + Dz[:-1]),Dr)
@@ -201,12 +234,10 @@ def generate_expert_trajectory(x,y,z,target_area = 1.0, f_z=None):
 
         epsilon = target_area - A_soil
 
-        if np.abs(epsilon) < 0.05:
+        if np.abs(epsilon) < 0.001:
             break
 
         depth = depth + EXPERT_LR*epsilon
-
-    print(A_soil,depth)
 
     theta_array = np.zeros(r_array.shape) + theta
 
@@ -227,6 +258,8 @@ def create_dataset(N = 1000, w = 20, h = 20, prefix = "dataset_"):
     for i in range(N):
         surf = generate_random_surface()
         surfaces.append(surf)
+
+
 
 if __name__ == '__main__':
     N = 5000

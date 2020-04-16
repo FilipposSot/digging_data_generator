@@ -20,15 +20,40 @@ class Simulator:
         surfaces = []
         hashes = []
 
-        self.X_surf = np.linspace(-2, 2, w)
-        self.Y_surf = np.linspace(-2, 2, h)
+        self.img_size = (500,500)
+
+        self.x_bounds = (-2,2)
+        self.y_bounds = (-2,2)
+
+        self.X_surf = np.linspace(self.x_bounds[0], self.x_bounds[1], w)
+        self.Y_surf = np.linspace(self.y_bounds[0], self.y_bounds[1], h)
         self.X_surf, self.Y_surf = np.meshgrid(self.X_surf, self.Y_surf)
+        self.r_max = 1.5
+        self.r_min = 0.4
 
-        self.elevation = gd.generate_random_polynomial_surface(width = w, height = h)
-
+        # self.elevation = gd.generate_random_polynomial_surface(width = w, height = h, noise_level=0.03)
+        self.elevation = gd.generate_bench_surface(width = w, height = h, noise_level = 0.0*0.03, theta=4*np.pi/4, z_max=1*0, z_min=0, offset1=3, offset2=12)
         self.excavator_position = (0.0,0.0)
+        self.truck_pos_polar = (1.05, 0.0)
+        self.truck_pos = (self.truck_pos_polar[0]*np.cos(self.truck_pos_polar[1]), self.truck_pos_polar[0]*np.sin(self.truck_pos_polar[1]))
+
+        self.truck_size = (0.9,0.6)
+
+        self.mouse_pos = (0,0)
 
         self.updating = False
+
+        self.fig = plt.figure(0)
+        self.ax = self.fig.gca(projection='3d')
+        self.ax.set_xlabel('x')
+        self.ax.set_ylabel('y')
+        self.ax.set_zlabel('z')
+        self.ax.set_xlim3d(-2,2)
+        self.ax.set_ylim3d(-2,2)
+        self.ax.set_zlim3d(-3,3)
+
+        plt.show(block=False)
+
         # self.dump_truck_position = (1.0,1.0)
 
         cv2.imshow('img', np.zeros((self.elevation.shape[0], self.elevation.shape[1], 3), np.uint8))
@@ -37,46 +62,111 @@ class Simulator:
 
     def Simulate(self):
         # img = np.zeros((500,500,3),np.uint8)
-        for _ in range(1000):
+        for _ in range(100000):
             # img = np.zeros((500,800,3),np.uint8)
             # img[:,:,0] = self.elevation
             # if self.center is not None:
             # cv2.circle(img, self.excavator_position, 10, (0,255,255), -1)
             # cv2.circle(img, self.dump_truck_position, 10, (0,0,255), -1)
-            img = self.get_display_image(self.elevation)
-
+            img = self.get_display_image(self.elevation, z_min=-3, z_max=3)
+            self.draw()
             cv2.imshow('img', img)
             cv2.waitKey(10)
 
-    def get_display_image(self, surf, z_min=None, z_max=None, img_size=(500,500)):
-        img = np.zeros((surf.shape[0], surf.shape[1], 3), np.uint8)
+    def draw(self):
+        # ax.plot3D(x_traj, y_traj, z_traj,'r')
+        # ax.plot3D(x_wp, y_wp, z_wp,'.k')
+        plt.cla()
+        # self.ax.plot_wireframe(self.X_surf, self.Y_surf, self.elevation, rstride=1, cstride=1)
+
+        self.ax.plot_surface(self.X_surf, self.Y_surf, self.elevation, rstride=1, cstride=1, cmap='ocean', alpha=0.2)
+        a = np.array([self.truck_pos[0] - 0.5*self.truck_size[0] - 0.001, self.truck_pos[0] - 0.5*self.truck_size[0], self.truck_pos[0] + 0.5*self.truck_size[0], self.truck_pos[0] + 0.5*self.truck_size[0] + 0.001])
+        b = np.array([self.truck_pos[1] - 0.5*self.truck_size[1] - 0.001, self.truck_pos[1] - 0.5*self.truck_size[1], self.truck_pos[1] + 0.5*self.truck_size[1], self.truck_pos[1] + 0.5*self.truck_size[1] + 0.001])
+        x,y = np.meshgrid(a, b)
+        z = 1.0*np.ones((4,4))
+        z[0,:] = 0
+        z[-1,:] = 0
+        z[:,0] = 0
+        z[:,-1] = 0
+
+        # self.ax.plot_surface(x,y,z, rstride=1, cstride=1, color='r')
+
+        r = int(self.X_surf.shape[0]/2.)
+        c = int(self.X_surf.shape[1]/2.)
+        # self.ax.scatter(self.X_surf[r,c], self.Y_surf[r,c], self.elevation[r,c]+0.1, s=100, c='y')
+        r = self.X_surf.shape[0] - int(self.mouse_pos[1]*self.elevation.shape[1]/self.img_size[1]) - 1
+        c = int(self.mouse_pos[0]*self.elevation.shape[0]/self.img_size[0])
+        # self.ax.scatter(self.X_surf[r,c], self.Y_surf[r,c], self.elevation[r,c]+0.1, s=100, c='g')
+        self.ax.set_xlabel('x')
+        self.ax.set_ylabel('y')
+        self.ax.set_zlabel('z')
+        self.ax.set_xlim3d(-2,2)
+        self.ax.set_ylim3d(-2,2)
+        self.ax.set_zlim3d(-2,2)
+        # plt.imshow(surf)
+        plt.draw()
+
+        plt.pause(0.001)
+
+    def get_display_image(self, surf, z_min=None, z_max=None):
+        img = np.zeros((surf.shape[0], surf.shape[1], 1), np.uint8)
         if z_min is None:
             z_min = np.amin(surf)
         if z_max is None:
             z_max = np.amax(surf)
-
         surf[surf < z_min] = z_min
         surf[surf > z_max] = z_max
 
         img[:,:,0] = (255*(surf - z_min)/(z_max - z_min)).astype(np.uint8)
-        img_resized = cv2.resize(img, img_size, interpolation=cv2.INTER_NEAREST)
+        img = cv2.applyColorMap(img, cv2.COLORMAP_OCEAN)
 
+        img_resized = cv2.resize(img, self.img_size, interpolation=cv2.INTER_NEAREST)
+        xx = 0.5*self.truck_size[0]*np.cos(self.truck_pos_polar[1])
+        xy = 0.5*self.truck_size[0]*np.sin(self.truck_pos_polar[1])
+        yx = -0.5*self.truck_size[1]*np.sin(self.truck_pos_polar[1])
+        yy = 0.5*self.truck_size[1]*np.cos(self.truck_pos_polar[1])
+        c1 = (self.truck_pos[0] + xx + yx, self.truck_pos[1] + xy + yy)
+        c2 = (self.truck_pos[0] - xx + yx, self.truck_pos[1] - xy + yy)
+        c3 = (self.truck_pos[0] + xx - yx, self.truck_pos[1] + xy - yy)
+        c4 = (self.truck_pos[0] - xx - yx, self.truck_pos[1] - xy - yy)
+
+        corners = np.array([c1,c2,c3,c4])*np.array(self.img_size)/np.array([self.x_bounds[1]-self.x_bounds[0],self.y_bounds[1]-self.y_bounds[0]]) + np.array(self.img_size)/2
+        corners = corners.astype(np.int64)
+        rect = cv2.minAreaRect(corners)
+        box = cv2.boxPoints(rect)
+        box = np.int0(box)
+        cv2.drawContours(img_resized,[box],-1,(0,0,255),-1)
+
+        cv2.circle(img_resized, (int(self.img_size[1]/2.), int(self.img_size[0]/2.)), 10, (0,255,255),-1)
+        r_max_pix = int(self.r_max*np.sqrt(self.img_size[0]**2+self.img_size[1]**2)/np.sqrt((self.X_surf[0,-1]-self.X_surf[0,0])**2 + (self.Y_surf[-1,0]-self.Y_surf[0,0])**2))
+        cv2.circle(img_resized, (int(self.img_size[1]/2.), int(self.img_size[0]/2.)), r_max_pix, (0,255,0))
+        img_resized = cv2.flip(img_resized, 0)
         return img_resized
-
     def onMouse(self, event, x, y, flags, param):
+        self.mouse_pos = (x,y)
+
         if event == cv2.EVENT_LBUTTONDOWN and not self.updating:
             self.updating = True
-            self.center = (x,y)
-            theta_traj, r_traj, z_traj, theta_wp, r_wp, z_wp = gd.generate_expert_trajectory(self.X_surf, self.Y_surf, self.elevation, f_z=self.surface_interpolator)
+            x = x*(self.X_surf[0,-1]-self.X_surf[0,0])/(self.img_size[1]-1) + self.X_surf[0,0]
+            y = (self.img_size[0]-1-y)*(self.Y_surf[-1,0]-self.Y_surf[0,0])/(self.img_size[0]-1) + self.Y_surf[0,0]
+            r_init = np.sqrt(x**2+y**2)
+            r_final = self.r_min
+            theta = np.arctan2(-y,x)
+            if r_init > self.r_max or r_init < r_final:
+                self.updating = False
+                return
+            theta_traj, r_traj, z_traj, theta_wp, r_wp, z_wp = gd.generate_expert_trajectory(self.X_surf, self.Y_surf, self.elevation, target_area = 3*0.15, f_z=self.surface_interpolator, theta=theta, r_init=r_init, r_final=r_final)
+
             x_traj, y_traj, z_traj = gd.cylindrical_to_cartesian(theta_traj,r_traj,z_traj)
+
             x_wp, y_wp, z_wp = gd.cylindrical_to_cartesian(theta_wp, r_wp, z_wp)
             surf_dug = gd.dig_surface(self.elevation, self.X_surf, self.Y_surf, x_traj, y_traj, z_traj, theta_traj, w_bucket = 0.2)
             surf_new = gd.diffuse_soil(surf_dug)
+            # surf_new = surf_dug
             self.elevation = surf_new
-            print self.elevation.shape
             self.updating = False
 
-    def surface_interpolator(self, x_list, y_list):
+    def surface_interpolator(self, y_list, x_list):
         if not isinstance(x_list, np.ndarray):
             x_list = np.array([x_list])
         if not isinstance(y_list, np.ndarray):
